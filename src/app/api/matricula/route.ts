@@ -15,7 +15,7 @@ export async function POST(request: Request) {
     if (!apiKey) {
       return NextResponse.json({ error: 'Clave de MatriculaAPI no configurada' }, { status: 500 });
     }
-    const url = `https://www.matriculaapi.com/api/reg.asmx/CheckSpain?RegistrationNumber=${matricula}&username=...`;
+    const url = `https://www.regcheck.org.uk/api/reg.asmx/CheckSpain?RegistrationNumber=${matricula}&username=${apiKey}`;
     // fetch...
     */
 
