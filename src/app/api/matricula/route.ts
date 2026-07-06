@@ -10,52 +10,44 @@ export async function POST(request: Request) {
 
     const apiKey = process.env.MATRICULA_API_KEY;
 
-    // TODO: Cuando haya API KEY, descomentar y hacer el fetch real:
-    /*
     if (!apiKey) {
       return NextResponse.json({ error: 'Clave de MatriculaAPI no configurada' }, { status: 500 });
     }
+
     const url = `https://www.regcheck.org.uk/api/reg.asmx/CheckSpain?RegistrationNumber=${matricula}&username=${apiKey}`;
-    // fetch...
-    */
+    
+    const response = await fetch(url, {
+      method: 'GET',
+    });
 
-    // MOCK: Devolvemos el payload exacto que da la documentación para que el frontend pueda parsearlo.
-    // Simulamos un retraso de red de 1 segundo.
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('RegCheck Error:', errorText);
+      return NextResponse.json({ error: 'Error al consultar la matrícula' }, { status: 502 });
+    }
 
-    const mockResponse = {
-      Description: "RENAULT MEGANE",
-      CarMake: {
-        CurrentTextValue: "RENAULT",
-      },
-      CarModel: {
-        CurrentTextValue: "MEGANE",
-      },
-      MakeDescription: {
-        CurrentTextValue: "RENAULT",
-      },
-      ModelDescription: {
-        CurrentTextValue: "MEGANE",
-      },
-      EngineSize: "1461",
-      VehicleIdentificationNumber: null,
-      RegistrationYear: "2010",
-      RegistrationDate: "06/07/2010",
-      Variation: "EXPRESSION 1.5DCI 85",
-      Seats: null,
-      VariantType: "Diesel 1461 cc 5 puertas",
-      VehicleType: "Car",
-      Fuel: "Diesel",
-      IndicativePrice: null,
-      Doors: "5",
-      AllTerain: null,
-      KType: null,
-      ImageUrl: "http://matriculaapi.com/image.aspx/@UkVOQVVMVCBNRUdBTkU=",
-      DynamicPower: "85.0",
-      Stolen: null,
-    };
+    // A veces regcheck devuelve XML con el JSON incrustado como string si no se especifica bien, 
+    // pero intentamos parsear como JSON directo primero. Si da error, lo trataremos.
+    const text = await response.text();
+    let data;
+    try {
+      // Si la API envuelve el JSON en XML de la forma <Vehicle xmlns="..."> {JSON} </Vehicle>
+      if (text.includes('<?xml')) {
+        const jsonMatch = text.match(/>(\s*\{.*\}\s*)</s);
+        if (jsonMatch && jsonMatch[1]) {
+          data = JSON.parse(jsonMatch[1]);
+        } else {
+          throw new Error('No se pudo extraer JSON del XML');
+        }
+      } else {
+        data = JSON.parse(text);
+      }
+    } catch (e) {
+      console.error('Error parseando JSON de RegCheck:', e, text);
+      return NextResponse.json({ error: 'Respuesta inválida del servidor' }, { status: 500 });
+    }
 
-    return NextResponse.json(mockResponse);
+    return NextResponse.json(data);
 
   } catch (error) {
     console.error('API Route Error:', error);
