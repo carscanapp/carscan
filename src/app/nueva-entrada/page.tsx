@@ -15,6 +15,7 @@ interface VehicleData {
 
 interface ValidationErrors {
   vin?: string;
+  general?: string;
 }
 
 // 2. Styled Components / Tailwind classes (mobile-first, alto contraste, guantes)
@@ -54,7 +55,7 @@ export default function NuevaEntradaPage() {
     
     setFormData((prev) => ({ ...prev, [name]: upperValue }));
 
-    // Validar VIN en tiempo real
+    // Validar VIN en tiempo real si se está rellenando
     if (name === 'vin') {
       if (upperValue.length > 0 && upperValue.length < 17) {
         setErrors((prev) => ({ ...prev, vin: 'El VIN debe tener 17 caracteres.' }));
@@ -70,58 +71,90 @@ export default function NuevaEntradaPage() {
         setErrors((prev) => ({ ...prev, vin: undefined }));
       }
     }
+
+    // Limpiar error general si el usuario empieza a escribir
+    if (errors.general) {
+      setErrors((prev) => ({ ...prev, general: undefined }));
+    }
   };
 
-  const handleFetchVincario = async () => {
-    if (!formData.vin || errors.vin) return;
+  const handleSearch = async () => {
+    if (!formData.matricula && !formData.vin) {
+      setErrors((prev) => ({ ...prev, general: 'Debes introducir la matrícula o el bastidor para buscar.' }));
+      return;
+    }
+
+    if (formData.vin && errors.vin) {
+      return; // El VIN tiene errores
+    }
     
     setLoading(true);
     setFetchError(null);
 
     try {
-      const res = await fetch('/api/vincario', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ vin: formData.vin }),
-      });
+      if (formData.matricula) {
+        // Buscar por Matrícula en MatriculaAPI
+        const res = await fetch('/api/matricula', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ matricula: formData.matricula }),
+        });
 
-      const data = await res.json();
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Error al conectar con MatriculaAPI');
 
-      if (!res.ok) {
-        throw new Error(data.error || 'Error al conectar con Vincario');
+        // Parseamos la respuesta de MatriculaAPI (la que nos pasaste)
+        const make = data.CarMake?.CurrentTextValue || data.MakeDescription?.CurrentTextValue || '';
+        const model = data.CarModel?.CurrentTextValue || data.ModelDescription?.CurrentTextValue || '';
+        const engine = data.Variation || data.VariantType || '';
+        const fetchedVin = data.VehicleIdentificationNumber; // Suele ser null
+
+        setFormData((prev) => ({
+          ...prev,
+          marca: make || prev.marca,
+          modelo: model || prev.modelo,
+          motor_codigo: engine || prev.motor_codigo,
+          vin: fetchedVin || prev.vin, 
+        }));
+
+      } else if (formData.vin) {
+        // Buscar por VIN en Vincario
+        const res = await fetch('/api/vincario', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ vin: formData.vin }),
+        });
+
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Error al conectar con Vincario');
+
+        let make = '';
+        let model = '';
+        let engine = '';
+
+        if (data.decode && Array.isArray(data.decode)) {
+          const makeItem = data.decode.find((item: any) => item.label === 'Make' || item.id === 'make');
+          const modelItem = data.decode.find((item: any) => item.label === 'Model' || item.id === 'model');
+          const engineItem = data.decode.find((item: any) => item.label?.includes('Engine') || item.id === 'engine_code');
+          
+          if (makeItem) make = makeItem.value;
+          if (modelItem) model = modelItem.value;
+          if (engineItem) engine = engineItem.value;
+        }
+
+        setFormData((prev) => ({
+          ...prev,
+          marca: make || prev.marca,
+          modelo: model || prev.modelo,
+          motor_codigo: engine || prev.motor_codigo,
+        }));
       }
 
-      // Vincario suele devolver los datos en un array "decode" con varios objetos.
-      // Buscamos Make, Model, Engine Type/Code etc. 
-      // Como no conocemos la estructura exacta sin probar, hacemos un intento genérico 
-      // o usamos data.decode si existe.
-      let make = '';
-      let model = '';
-      let engine = '';
-
-      if (data.decode && Array.isArray(data.decode)) {
-        const makeItem = data.decode.find((item: any) => item.label === 'Make' || item.id === 'make');
-        const modelItem = data.decode.find((item: any) => item.label === 'Model' || item.id === 'model');
-        const engineItem = data.decode.find((item: any) => item.label?.includes('Engine') || item.id === 'engine_code');
-        
-        if (makeItem) make = makeItem.value;
-        if (modelItem) model = modelItem.value;
-        if (engineItem) engine = engineItem.value;
-      }
-
-      setFormData((prev) => ({
-        ...prev,
-        marca: make || prev.marca,
-        modelo: model || prev.modelo,
-        motor_codigo: engine || prev.motor_codigo,
-      }));
-
-      // Pasamos al paso 2
       setStep(2);
     } catch (err: any) {
       console.error(err);
-      setFetchError(err.message || 'Error desconocido al decodificar el VIN.');
-      // Pasamos al paso 2 de todas formas para que el operario pueda rellenarlo a mano
+      setFetchError(err.message || 'Error desconocido al buscar los datos.');
+      // Pasamos al paso 2 de todas formas para relleno manual
       setStep(2);
     } finally {
       setLoading(false);
@@ -132,11 +165,14 @@ export default function NuevaEntradaPage() {
     e.preventDefault();
 
     if (step === 1) {
-      handleFetchVincario();
+      handleSearch();
     } else {
+      if (!formData.vin) {
+        setErrors((prev) => ({ ...prev, vin: 'El VIN es obligatorio para finalizar la entrada.' }));
+        return;
+      }
       console.log('Guardando datos y pasando a checklist:', formData);
       alert('Datos confirmados. Aquí iríamos al checklist de piezas.');
-      // router.push('/nueva-entrada/checklist');
     }
   };
 
@@ -152,7 +188,13 @@ export default function NuevaEntradaPage() {
       <div className={styles.card}>
         {fetchError && (
           <div className="mb-4 p-4 rounded-lg bg-yellow-50 border-l-4 border-yellow-400 text-yellow-800 font-medium">
-            No se pudo decodificar el VIN automáticamente: {fetchError}. Por favor, rellena los datos a mano.
+            No se encontraron datos automáticamente: {fetchError}. Por favor, rellena los datos a mano.
+          </div>
+        )}
+
+        {errors.general && (
+          <div className="mb-4 p-4 rounded-lg bg-red-50 border-l-4 border-red-500 text-red-800 font-bold">
+            {errors.general}
           </div>
         )}
 
@@ -168,7 +210,8 @@ export default function NuevaEntradaPage() {
               onChange={handleInputChange}
               className={styles.input}
               placeholder="Ej. 1234ABC"
-              required
+              // En el paso 1 no es "required" por HTML para permitir VIN. Lo validamos en JS.
+              readOnly={step === 2}
             />
           </div>
 
@@ -182,9 +225,8 @@ export default function NuevaEntradaPage() {
               value={formData.vin}
               onChange={handleInputChange}
               className={`${styles.input} ${errors.vin ? styles.inputError : ''}`}
-              placeholder="17 caracteres"
-              required
-              readOnly={step === 2}
+              placeholder="Opcional en Paso 1 (si tienes matrícula)"
+              readOnly={step === 2 && formData.vin.length === 17 && !errors.vin}
             />
             {errors.vin && <p className={styles.errorText}>{errors.vin}</p>}
           </div>
@@ -200,7 +242,7 @@ export default function NuevaEntradaPage() {
                   value={formData.marca}
                   onChange={handleInputChange}
                   className={styles.input}
-                  placeholder="Ej. SEAT"
+                  placeholder="Ej. RENAULT"
                   required
                 />
               </div>
@@ -214,13 +256,13 @@ export default function NuevaEntradaPage() {
                   value={formData.modelo}
                   onChange={handleInputChange}
                   className={styles.input}
-                  placeholder="Ej. LEON"
+                  placeholder="Ej. MEGANE"
                   required
                 />
               </div>
 
               <div className={styles.formGroup}>
-                <label htmlFor="motor_codigo" className={styles.label}>Código de Motor</label>
+                <label htmlFor="motor_codigo" className={styles.label}>Motor (Variante)</label>
                 <input
                   id="motor_codigo"
                   name="motor_codigo"
@@ -228,7 +270,7 @@ export default function NuevaEntradaPage() {
                   value={formData.motor_codigo}
                   onChange={handleInputChange}
                   className={styles.input}
-                  placeholder="Ej. BKD (Opcional)"
+                  placeholder="Ej. 1.5DCI 85"
                 />
               </div>
             </>
@@ -237,7 +279,7 @@ export default function NuevaEntradaPage() {
           <button 
             type="submit" 
             className={styles.button}
-            disabled={loading || (!!errors.vin && formData.vin.length > 0)}
+            disabled={loading || (!!errors.vin && formData.vin.length > 0 && formData.vin.length < 17)}
           >
             {loading ? (
               <span className="animate-pulse">Buscando datos...</span>
@@ -258,9 +300,10 @@ export default function NuevaEntradaPage() {
  * Documentación de Memoria
  * ==========================================
  * ¿Por qué se tomó esta decisión técnica?
- * - Se separa en dos pasos (Step 1 y Step 2) en el mismo Client Component para 
- *   mantener el estado y ofrecer una UX fluida. 
- * - Si Vincario falla (API KEY incorrecta, límite alcanzado, etc.), capturamos 
- *   el error y avanzamos al Step 2 igualmente para que el operario nunca 
- *   se quede bloqueado (requerimiento de FASE 1: fallback manual siempre disponible).
+ * - Se separa la lógica de validación HTML5 (`required`) de la lógica JS para 
+ *   permitir que o bien Matrícula o bien VIN disparen el submit en el Paso 1.
+ * - En el Paso 2, el VIN sí se vuelve obligatorio antes de pasar al Checklist, 
+ *   ya que MatriculaAPI frecuentemente devuelve el VIN como null.
+ * - Mantenemos la estructura de 2 pasos para que el usuario confirme siempre
+ *   la información devuelta por la API (MatriculaAPI o Vincario).
  */
