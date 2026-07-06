@@ -1,4 +1,5 @@
 import { redirect } from 'next/navigation';
+import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
 
 export default async function HomePage() {
@@ -35,9 +36,11 @@ export default async function HomePage() {
         <div className="mb-8 mt-4 text-center">
           <h2 className="text-2xl font-bold text-slate-800 mb-6">¿Qué quieres hacer?</h2>
           
-          <button className="w-full max-w-sm rounded-2xl bg-green-600 p-6 text-2xl font-bold text-white shadow-lg hover:bg-green-700 active:bg-green-800 transition-all">
-            + Nueva Entrada
-          </button>
+          <Link href="/nueva-entrada" className="w-full">
+            <button className="w-full max-w-sm rounded-2xl bg-green-600 p-6 text-2xl font-bold text-white shadow-lg hover:bg-green-700 active:bg-green-800 transition-all">
+              + Nueva Entrada
+            </button>
+          </Link>
         </div>
       </main>
     </div>
