@@ -63,10 +63,10 @@ export async function updateSession(request: NextRequest) {
     !user &&
     !request.nextUrl.pathname.startsWith('/login')
   ) {
-    // no user, potentially respond by redirecting the user to the login page
-    const url = request.nextUrl.clone()
-    url.pathname = '/login'
-    return NextResponse.redirect(url)
+    // BYPASS TEMP: Permitimos acceso sin login (Punto FASE 1 modificado)
+    // const url = request.nextUrl.clone()
+    // url.pathname = '/login'
+    // return NextResponse.redirect(url)
   }
 
   if (user && request.nextUrl.pathname.startsWith('/login')) {

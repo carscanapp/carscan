@@ -6,23 +6,26 @@ export default async function HomePage() {
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
 
-  if (!user) {
-    redirect('/login');
-  }
+  let profile = null;
 
-  // Obtenemos el perfil para saber si es admin u operario
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('nombre, rol')
-    .eq('id', user.id)
-    .single();
+  if (user) {
+    const { data } = await supabase
+      .from('profiles')
+      .select('nombre, rol')
+      .eq('id', user.id)
+      .single();
+    profile = data;
+  } else {
+    // BYPASS TEMP
+    profile = { nombre: 'Operario (Sin Auth)', rol: 'operario' };
+  }
 
   return (
     <div className="flex min-h-screen flex-col bg-slate-100">
       <header className="sticky top-0 z-10 flex items-center justify-between bg-blue-600 p-4 text-white shadow-md">
         <div>
           <h1 className="text-xl font-bold">Carscan</h1>
-          <p className="text-sm opacity-90">{profile?.nombre || user.email}</p>
+          <p className="text-sm opacity-90">{profile?.nombre || user?.email || 'Bypass'}</p>
         </div>
         <form action="/auth/signout" method="post">
           <button className="rounded-lg bg-blue-700 px-4 py-2 text-sm font-medium hover:bg-blue-800">
