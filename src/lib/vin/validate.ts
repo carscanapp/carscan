@@ -5,9 +5,15 @@
  *   1. Longitud exacta de 17 caracteres
  *   2. Exclusión de I, O, Q (confusión visual con 1, 0, 9)
  *   3. Solo alfanuméricos válidos
- *   4. Dígito de control en posición 9 según ISO 3779
+ *   4. Dígito de control en posición 9 según ISO 3779 (WARNING, no bloqueo)
  *
  * No realiza ninguna llamada de red.
+ *
+ * Lección Aprendida: La norma ISO 3779 del check digit solo es obligatoria
+ * en Norteamérica. La mayoría de fabricantes europeos (Volvo, SEAT, VW,
+ * Renault, BMW, PSA, Fiat…) NO la respetan — usan la posición 9 para otros
+ * fines. Por eso, el check digit se trata como WARNING y nunca bloquea al
+ * operario.
  */
 
 /** Pesos posicionales para el cálculo del check digit ISO 3779 */
@@ -29,42 +35,42 @@ const VIN_CHAR_REGEX = /^[A-HJ-NPR-Z0-9]{17}$/;
 
 /**
  * Resultado detallado de la validación de un VIN.
- * Permite al consumidor saber *qué* falló, no solo si pasó o no.
  */
 export interface VinValidationResult {
+  /** true si el VIN pasa las comprobaciones obligatorias (longitud + caracteres) */
   valid: boolean;
   /** Código de error si no es válido */
-  errorCode?: 'WRONG_LENGTH' | 'INVALID_CHARS' | 'FORBIDDEN_CHARS' | 'BAD_CHECK_DIGIT';
+  errorCode?: 'WRONG_LENGTH' | 'INVALID_CHARS' | 'FORBIDDEN_CHARS';
   /** Mensaje de error legible en español para la UI */
   errorMessage?: string;
+  /** true si el check digit ISO 3779 es correcto (solo informativo) */
+  checkDigitValid: boolean;
+  /** Aviso si el check digit no coincide (no es un error bloqueante) */
+  checkDigitWarning?: string;
 }
 
 /**
- * Valida un VIN según la norma ISO 3779.
+ * Valida un VIN comprobando longitud y caracteres válidos.
+ * El check digit NO bloquea — la mayoría de fabricantes europeos no lo usan.
  *
  * @param vin - Cadena a validar (se normaliza internamente a mayúsculas)
- * @returns `true` si el VIN pasa todas las comprobaciones
- *
- * @remarks
- * Algunos fabricantes europeos (especialmente antes de 1981 y ciertos modelos
- * del grupo PSA y Fiat) no calculan el check digit según esta norma. En esos
- * casos, la función devolverá `false` aunque el VIN sea "real". El formulario
- * del operario permite sobrescribir la validación si lo necesita.
+ * @returns `true` si el VIN pasa las comprobaciones obligatorias
  */
 export function isValidVIN(vin: string): boolean {
   return validateVIN(vin).valid;
 }
 
 /**
- * Validación detallada del VIN con información del error.
+ * Validación detallada del VIN con información del error y aviso de check digit.
  *
  * @param vin - Cadena a validar
- * @returns Objeto con el resultado y, si falla, el código y mensaje del error
+ * @returns Objeto con el resultado, errores bloqueantes y avisos informativos
  */
 export function validateVIN(vin: string): VinValidationResult {
   if (!vin || vin.length !== 17) {
     return {
       valid: false,
+      checkDigitValid: false,
       errorCode: 'WRONG_LENGTH',
       errorMessage: 'El VIN debe tener exactamente 17 caracteres.',
     };
@@ -75,6 +81,7 @@ export function validateVIN(vin: string): VinValidationResult {
   if (/[IOQ]/.test(upper)) {
     return {
       valid: false,
+      checkDigitValid: false,
       errorCode: 'FORBIDDEN_CHARS',
       errorMessage: 'El VIN no puede contener las letras I, O ni Q.',
     };
@@ -83,18 +90,24 @@ export function validateVIN(vin: string): VinValidationResult {
   if (!VIN_CHAR_REGEX.test(upper)) {
     return {
       valid: false,
+      checkDigitValid: false,
       errorCode: 'INVALID_CHARS',
       errorMessage: 'El VIN solo puede contener letras A-Z (sin I/O/Q) y dígitos 0-9.',
     };
   }
 
-  // Cálculo del check digit (posición 9, índice 8)
+  // Cálculo del check digit (posición 9, índice 8) — solo informativo
   let sum = 0;
   for (let i = 0; i < 17; i++) {
     const char = upper[i];
     const value = TRANSLITERATION[char];
     if (value === undefined) {
-      return { valid: false, errorCode: 'INVALID_CHARS', errorMessage: `Carácter no reconocido: ${char}` };
+      return {
+        valid: false,
+        checkDigitValid: false,
+        errorCode: 'INVALID_CHARS',
+        errorMessage: `Carácter no reconocido: ${char}`,
+      };
     }
     sum += value * WEIGHTS[i];
   }
@@ -102,25 +115,27 @@ export function validateVIN(vin: string): VinValidationResult {
   const remainder = sum % 11;
   const expectedCheckDigit = remainder === 10 ? 'X' : String(remainder);
   const actualCheckDigit = upper[8];
+  const checkDigitValid = expectedCheckDigit === actualCheckDigit;
 
-  if (expectedCheckDigit !== actualCheckDigit) {
-    return {
-      valid: false,
-      errorCode: 'BAD_CHECK_DIGIT',
-      errorMessage: `Dígito de control inválido (esperado ${expectedCheckDigit}, encontrado ${actualCheckDigit}).`,
-    };
-  }
-
-  return { valid: true };
+  return {
+    valid: true, // Siempre válido si longitud y caracteres están bien
+    checkDigitValid,
+    checkDigitWarning: checkDigitValid
+      ? undefined
+      : `Check digit ISO 3779 no coincide (esto es normal en fabricantes europeos).`,
+  };
 }
 
 /**
  * ==========================================
  * Documentación de Memoria
  * ==========================================
- * - Se mantiene `isValidVIN` como wrapper booleano simple para retrocompatibilidad.
- * - `validateVIN` expone el detalle del error para la UI (mostrar mensajes específicos).
- * - El peso de la posición 9 es 0 porque es la propia posición del check digit.
- * - Edge case: algunos fabricantes europeos no respetan ISO 3779. Se documenta en
- *   los comentarios y el formulario permite sobrescribir manualmente.
+ * - LECCIÓN APRENDIDA (2026-07-11): El check digit ISO 3779 NO es universal.
+ *   Fabricantes europeos como Volvo (YV1BZ714681016153), SEAT, VW, Renault,
+ *   BMW, PSA, Fiat… no lo respetan. Solo es obligatorio en Norteamérica.
+ *   Por eso, el check digit se trata como WARNING informativo, nunca como
+ *   bloqueo. El operario no debe quedarse atascado por un VIN real.
+ * - `isValidVIN` sigue siendo retrocompatible (booleano).
+ * - `validateVIN` expone `checkDigitValid` y `checkDigitWarning` para que
+ *   la UI pueda mostrar un aviso sutil sin impedir la operación.
  */

@@ -16,6 +16,7 @@ interface VehicleData {
 
 interface ValidationErrors {
   vin?: string;
+  vinWarning?: string;
   general?: string;
 }
 
@@ -66,18 +67,23 @@ export default function NuevaEntradaPage() {
     // Validar VIN en tiempo real si se está rellenando
     if (name === 'vin') {
       if (upperValue.length > 0 && upperValue.length < 17) {
-        setErrors((prev) => ({ ...prev, vin: 'El VIN debe tener 17 caracteres.' }));
+        setErrors((prev) => ({ ...prev, vin: 'El VIN debe tener 17 caracteres.', vinWarning: undefined }));
       } else if (upperValue.length === 17) {
         const result = validateVIN(upperValue);
         if (!result.valid) {
-          setErrors((prev) => ({ ...prev, vin: result.errorMessage }));
+          setErrors((prev) => ({ ...prev, vin: result.errorMessage, vinWarning: undefined }));
         } else {
-          setErrors((prev) => ({ ...prev, vin: undefined }));
+          // VIN es válido — el check digit es solo un aviso informativo
+          setErrors((prev) => ({
+            ...prev,
+            vin: undefined,
+            vinWarning: result.checkDigitWarning,
+          }));
         }
       } else if (upperValue.length > 17) {
-        setErrors((prev) => ({ ...prev, vin: 'El VIN no puede tener más de 17 caracteres.' }));
+        setErrors((prev) => ({ ...prev, vin: 'El VIN no puede tener más de 17 caracteres.', vinWarning: undefined }));
       } else {
-        setErrors((prev) => ({ ...prev, vin: undefined }));
+        setErrors((prev) => ({ ...prev, vin: undefined, vinWarning: undefined }));
       }
     }
 
@@ -253,6 +259,9 @@ export default function NuevaEntradaPage() {
               readOnly={step === 2 && formData.vin.length === 17 && !errors.vin}
             />
             {errors.vin && <p className={styles.errorText}>{errors.vin}</p>}
+            {!errors.vin && errors.vinWarning && (
+              <p className="mt-2 text-sm font-medium text-yellow-600">ℹ️ {errors.vinWarning}</p>
+            )}
           </div>
 
           {step === 2 && (
