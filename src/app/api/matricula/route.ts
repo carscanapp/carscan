@@ -8,7 +8,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Matrícula requerida' }, { status: 400 });
     }
 
-    const apiKey = process.env.MATRICULA_API_KEY;
+    // Hardcoded temporaly to bypass .env cache issues
+    const apiKey = "carscanapp1@gmail.com";
 
     if (!apiKey) {
       return NextResponse.json({ error: 'Clave de MatriculaAPI no configurada' }, { status: 500 });

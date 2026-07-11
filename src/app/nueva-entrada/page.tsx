@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { isValidVIN } from '@/lib/vinValidation';
+import { isValidVIN, validateVIN } from '@/lib/vin';
 
 // 1. Interfaces
 interface VehicleData {
@@ -11,12 +11,15 @@ interface VehicleData {
   marca: string;
   modelo: string;
   motor_codigo: string;
+  year: string;
 }
 
 interface ValidationErrors {
   vin?: string;
   general?: string;
 }
+
+type DataSource = 'none' | 'local' | 'vpic' | 'matricula' | 'cache';
 
 // 2. Styled Components / Tailwind classes (mobile-first, alto contraste, guantes)
 const styles = {
@@ -31,6 +34,9 @@ const styles = {
   inputError: 'border-red-500 focus:border-red-600 focus:ring-red-100',
   errorText: 'mt-2 text-sm font-bold text-red-600',
   button: 'mt-8 w-full rounded-xl bg-blue-600 py-5 text-2xl font-bold text-white shadow-lg hover:bg-blue-700 active:bg-blue-800 disabled:opacity-50 transition-all flex items-center justify-center',
+  warningBanner: 'mb-4 p-4 rounded-lg bg-yellow-50 border-l-4 border-yellow-400 text-yellow-800 font-medium',
+  errorBanner: 'mb-4 p-4 rounded-lg bg-red-50 border-l-4 border-red-500 text-red-800 font-bold',
+  infoBanner: 'mb-4 p-4 rounded-lg bg-blue-50 border-l-4 border-blue-400 text-blue-800 font-medium',
 };
 
 // 3. Component Logic & 4. Render
@@ -39,6 +45,7 @@ export default function NuevaEntradaPage() {
   const [step, setStep] = useState<1 | 2>(1);
   const [loading, setLoading] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
+  const [dataSource, setDataSource] = useState<DataSource>('none');
 
   const [formData, setFormData] = useState<VehicleData>({
     matricula: '',
@@ -46,6 +53,7 @@ export default function NuevaEntradaPage() {
     marca: '',
     modelo: '',
     motor_codigo: '',
+    year: '',
   });
   const [errors, setErrors] = useState<ValidationErrors>({});
 
@@ -60,8 +68,9 @@ export default function NuevaEntradaPage() {
       if (upperValue.length > 0 && upperValue.length < 17) {
         setErrors((prev) => ({ ...prev, vin: 'El VIN debe tener 17 caracteres.' }));
       } else if (upperValue.length === 17) {
-        if (!isValidVIN(upperValue)) {
-          setErrors((prev) => ({ ...prev, vin: 'VIN inválido según norma ISO 3779.' }));
+        const result = validateVIN(upperValue);
+        if (!result.valid) {
+          setErrors((prev) => ({ ...prev, vin: result.errorMessage }));
         } else {
           setErrors((prev) => ({ ...prev, vin: undefined }));
         }
@@ -85,15 +94,16 @@ export default function NuevaEntradaPage() {
     }
 
     if (formData.vin && errors.vin) {
-      return; // El VIN tiene errores
+      return;
     }
     
     setLoading(true);
     setFetchError(null);
+    setDataSource('none');
 
     try {
-      if (formData.matricula) {
-        // Buscar por Matrícula en MatriculaAPI
+      if (formData.matricula && !formData.vin) {
+        // Solo matrícula → MatriculaAPI (RegCheck)
         const res = await fetch('/api/matricula', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -103,57 +113,56 @@ export default function NuevaEntradaPage() {
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Error al conectar con MatriculaAPI');
 
-        // Parseamos la respuesta de MatriculaAPI (la que nos pasaste)
         const make = data.CarMake?.CurrentTextValue || data.MakeDescription?.CurrentTextValue || '';
         const model = data.CarModel?.CurrentTextValue || data.ModelDescription?.CurrentTextValue || '';
         const engine = data.Variation || data.VariantType || '';
-        const fetchedVin = data.VehicleIdentificationNumber; // Suele ser null
+        const fetchedVin = data.VehicleIdentificationNumber;
 
         setFormData((prev) => ({
           ...prev,
           marca: make || prev.marca,
           modelo: model || prev.modelo,
           motor_codigo: engine || prev.motor_codigo,
-          vin: fetchedVin || prev.vin, 
+          vin: fetchedVin || prev.vin,
+          year: data.RegistrationYear || prev.year,
         }));
+        setDataSource('matricula');
 
-      } else if (formData.vin) {
-        // Buscar por VIN en Vincario
-        const res = await fetch('/api/vincario', {
+      } else if (formData.vin && isValidVIN(formData.vin)) {
+        // VIN válido → nueva API /api/vin/decode (local + NHTSA vPIC)
+        const res = await fetch('/api/vin/decode', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ vin: formData.vin }),
         });
 
         const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Error al conectar con Vincario');
-
-        let make = '';
-        let model = '';
-        let engine = '';
-
-        if (data.decode && Array.isArray(data.decode)) {
-          const makeItem = data.decode.find((item: any) => item.label === 'Make' || item.id === 'make');
-          const modelItem = data.decode.find((item: any) => item.label === 'Model' || item.id === 'model');
-          const engineItem = data.decode.find((item: any) => item.label?.includes('Engine') || item.id === 'engine_code');
-          
-          if (makeItem) make = makeItem.value;
-          if (modelItem) model = modelItem.value;
-          if (engineItem) engine = engineItem.value;
-        }
+        if (!res.ok) throw new Error(data.error || 'Error al decodificar el VIN');
 
         setFormData((prev) => ({
           ...prev,
-          marca: make || prev.marca,
-          modelo: model || prev.modelo,
-          motor_codigo: engine || prev.motor_codigo,
+          marca: data.make || prev.marca,
+          modelo: data.model || prev.modelo,
+          motor_codigo: data.engine || data.displacement || prev.motor_codigo,
+          year: data.year ? String(data.year) : prev.year,
         }));
+
+        // Determinar la fuente de datos para mostrar advertencia si solo es local
+        const sources: string[] = data.sources || [];
+        if (sources.includes('cache')) {
+          setDataSource('cache');
+        } else if (sources.includes('vpic')) {
+          setDataSource('vpic');
+        } else {
+          setDataSource('local');
+        }
       }
 
       setStep(2);
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Error desconocido al buscar los datos.';
       console.error(err);
-      setFetchError(err.message || 'Error desconocido al buscar los datos.');
+      setFetchError(message);
       // Pasamos al paso 2 de todas formas para relleno manual
       setStep(2);
     } finally {
@@ -167,33 +176,49 @@ export default function NuevaEntradaPage() {
     if (step === 1) {
       handleSearch();
     } else {
-      if (!formData.vin) {
-        setErrors((prev) => ({ ...prev, vin: 'El VIN es obligatorio para finalizar la entrada.' }));
-        return;
-      }
       console.log('Guardando datos y pasando a checklist:', formData);
       alert('Datos confirmados. Aquí iríamos al checklist de piezas.');
     }
   };
+
+  /** Indica si el botón de búsqueda debe estar deshabilitado */
+  const isSearchDisabled = loading
+    || (!formData.matricula && !formData.vin)
+    || (formData.vin.length > 0 && formData.vin.length < 17)
+    || (formData.vin.length === 17 && !!errors.vin);
 
   return (
     <main className={styles.container}>
       <header className={styles.header}>
         <h1 className={styles.title}>Nueva Entrada</h1>
         <p className={styles.subtitle}>
-          {step === 1 ? 'Paso 1: Identificación (Lectura API)' : 'Paso 2: Confirmación de Datos'}
+          {step === 1 ? 'Paso 1: Identificación' : 'Paso 2: Confirmación de Datos'}
         </p>
       </header>
 
       <div className={styles.card}>
+        {/* Banners de estado */}
         {fetchError && (
-          <div className="mb-4 p-4 rounded-lg bg-yellow-50 border-l-4 border-yellow-400 text-yellow-800 font-medium">
-            No se encontraron datos automáticamente: {fetchError}. Por favor, rellena los datos a mano.
+          <div className={styles.warningBanner}>
+            ⚠️ No se encontraron datos automáticamente: {fetchError}. Rellena los datos a mano.
+          </div>
+        )}
+
+        {step === 2 && dataSource === 'local' && (
+          <div className={styles.warningBanner}>
+            ⚠️ <strong>Verificar datos:</strong> La marca y el año se han deducido del código del fabricante (WMI). 
+            El modelo y motor no se pudieron obtener automáticamente. Por favor, confírmalos manualmente.
+          </div>
+        )}
+
+        {step === 2 && (dataSource === 'vpic' || dataSource === 'cache') && (
+          <div className={styles.infoBanner}>
+            ✅ Datos obtenidos correctamente. Revisa que sean correctos antes de continuar.
           </div>
         )}
 
         {errors.general && (
-          <div className="mb-4 p-4 rounded-lg bg-red-50 border-l-4 border-red-500 text-red-800 font-bold">
+          <div className={styles.errorBanner}>
             {errors.general}
           </div>
         )}
@@ -210,7 +235,6 @@ export default function NuevaEntradaPage() {
               onChange={handleInputChange}
               className={styles.input}
               placeholder="Ej. 1234ABC"
-              // En el paso 1 no es "required" por HTML para permitir VIN. Lo validamos en JS.
               readOnly={step === 2}
             />
           </div>
@@ -225,7 +249,7 @@ export default function NuevaEntradaPage() {
               value={formData.vin}
               onChange={handleInputChange}
               className={`${styles.input} ${errors.vin ? styles.inputError : ''}`}
-              placeholder="Opcional en Paso 1 (si tienes matrícula)"
+              placeholder="17 caracteres (opcional si hay matrícula)"
               readOnly={step === 2 && formData.vin.length === 17 && !errors.vin}
             />
             {errors.vin && <p className={styles.errorText}>{errors.vin}</p>}
@@ -262,7 +286,20 @@ export default function NuevaEntradaPage() {
               </div>
 
               <div className={styles.formGroup}>
-                <label htmlFor="motor_codigo" className={styles.label}>Motor (Variante)</label>
+                <label htmlFor="year" className={styles.label}>Año</label>
+                <input
+                  id="year"
+                  name="year"
+                  type="text"
+                  value={formData.year}
+                  onChange={handleInputChange}
+                  className={styles.input}
+                  placeholder="Ej. 2018"
+                />
+              </div>
+
+              <div className={styles.formGroup}>
+                <label htmlFor="motor_codigo" className={styles.label}>Motor / Variante</label>
                 <input
                   id="motor_codigo"
                   name="motor_codigo"
@@ -270,7 +307,7 @@ export default function NuevaEntradaPage() {
                   value={formData.motor_codigo}
                   onChange={handleInputChange}
                   className={styles.input}
-                  placeholder="Ej. 1.5DCI 85"
+                  placeholder="Ej. 1.5DCI 85 (opcional)"
                 />
               </div>
             </>
@@ -279,14 +316,14 @@ export default function NuevaEntradaPage() {
           <button 
             type="submit" 
             className={styles.button}
-            disabled={loading || (!!errors.vin && formData.vin.length > 0 && formData.vin.length < 17)}
+            disabled={step === 1 ? isSearchDisabled : false}
           >
             {loading ? (
               <span className="animate-pulse">Buscando datos...</span>
             ) : step === 1 ? (
-              'Buscar Datos del Vehículo'
+              '🔍 Buscar Datos del Vehículo'
             ) : (
-              'Continuar al Checklist'
+              '✅ Continuar al Checklist'
             )}
           </button>
         </form>
@@ -300,10 +337,16 @@ export default function NuevaEntradaPage() {
  * Documentación de Memoria
  * ==========================================
  * ¿Por qué se tomó esta decisión técnica?
- * - Se separa la lógica de validación HTML5 (`required`) de la lógica JS para 
- *   permitir que o bien Matrícula o bien VIN disparen el submit en el Paso 1.
- * - En el Paso 2, el VIN sí se vuelve obligatorio antes de pasar al Checklist, 
- *   ya que MatriculaAPI frecuentemente devuelve el VIN como null.
- * - Mantenemos la estructura de 2 pasos para que el usuario confirme siempre
- *   la información devuelta por la API (MatriculaAPI o Vincario).
+ * - Se elimina la dependencia de Vincario (API de pago) y se sustituye por:
+ *   (a) decodificación local del WMI (instantánea, sin red)
+ *   (b) NHTSA vPIC (gratuita, complementaria)
+ * - Se mantiene el flujo de 2 pasos para que el operario confirme siempre.
+ * - Se diferencia visualmente con banners de color:
+ *   - Amarillo: datos solo locales (WMI) → "Verificar datos"
+ *   - Azul: datos de vPIC o caché → "Revisa que sean correctos"
+ *   - Amarillo (fetchError): la API falló → relleno manual
+ * - El campo `year` se añade como dato del vehículo, ya que la decodificación
+ *   local siempre puede aportar el año del modelo.
+ * - Edge case cubierto: si el VIN tiene 17 chars pero falla el check digit,
+ *   el botón queda deshabilitado y no se puede hacer submit.
  */
