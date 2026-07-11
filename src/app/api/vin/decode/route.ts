@@ -15,22 +15,26 @@ interface DecodeResult {
   fuel: string;
   engine: string;
   displacement: string;
-  /** Fuentes que aportaron datos: 'local', 'vpic', 'cache' */
+  power: string;
+  transmission: string;
+  bodyType: string;
+  /** Fuentes que aportaron datos: 'local', 'vincario', 'cache' */
   sources: string[];
 }
 
-/** Timeout para la llamada a NHTSA vPIC (5 segundos) */
-const VPIC_TIMEOUT_MS = 5_000;
+/** Timeout para la llamada a Vincario (5 segundos) */
+const VINCARIO_TIMEOUT_MS = 5_000;
 
 /**
  * POST /api/vin/decode
  *
  * Flujo:
- *   1. Valida el VIN localmente (ISO 3779)
+ *   1. Valida el VIN localmente (longitud + caracteres)
  *   2. Busca en caché (vehicle_lookups)
- *   3. Si no hay caché: decodificación local (WMI) + NHTSA vPIC (con timeout)
- *   4. Combina resultados (local como base, vPIC sobrescribe si aporta)
- *   5. Guarda en caché y devuelve
+ *   3. Si no hay caché: decodificación local (WMI) + Vincario API
+ *   4. Combina: datos locales como base + Vincario sobrescribe si aporta
+ *   5. Guarda el resultado en vehicle_lookups y lo devuelve
+ *   6. Si Vincario falla o no responde en 5s, devuelve solo datos locales
  */
 export async function POST(request: Request) {
   try {
@@ -61,7 +65,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ ...cachedResult, sources: ['cache'] });
     }
 
-    // ── 3. Decodificación local (WMI + año) ──
+    // ── 3. Decodificación local (WMI + año) como base segura ──
     const local = decodeVinLocal(vin);
 
     const result: DecodeResult = {
@@ -72,58 +76,90 @@ export async function POST(request: Request) {
       fuel: '',
       engine: '',
       displacement: '',
+      power: '',
+      transmission: '',
+      bodyType: '',
       sources: ['local'],
     };
 
-    // ── 4. Llamar a NHTSA vPIC (gratuita, sin API key) ──
+    // ── 4. Llamar a Vincario API ──
     try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), VPIC_TIMEOUT_MS);
+      const apiKey = process.env.VINDECODER_API_KEY;
+      const secretKey = process.env.VINDECODER_SECRET_KEY;
 
-      const vpicUrl = `https://vpic.nhtsa.dot.gov/api/vehicles/DecodeVinValues/${vin}?format=json`;
-      const vpicResponse = await fetch(vpicUrl, {
-        signal: controller.signal,
-        headers: { Accept: 'application/json' },
-      });
+      if (!apiKey || !secretKey) {
+        console.warn('[VIN Decode] Vincario API keys no configuradas, usando solo datos locales');
+      } else {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), VINCARIO_TIMEOUT_MS);
 
-      clearTimeout(timeout);
+        const vincarioUrl = `https://api.vindecoder.eu/3.2/${apiKey}/${secretKey}/decode/${vin}.json`;
+        const vincarioResponse = await fetch(vincarioUrl, {
+          signal: controller.signal,
+          headers: { Accept: 'application/json' },
+        });
 
-      if (vpicResponse.ok) {
-        const vpicData = await vpicResponse.json();
-        const vpicResult = vpicData?.Results?.[0];
+        clearTimeout(timeout);
 
-        if (vpicResult) {
-          // Solo sobrescribir con datos útiles (vPIC devuelve "" o "Not Applicable" para datos vacíos)
-          const isUseful = (val: string | undefined | null): val is string =>
-            !!val && val.trim() !== '' && val !== 'Not Applicable';
+        if (vincarioResponse.ok) {
+          const vincarioData = await vincarioResponse.json();
 
-          if (isUseful(vpicResult.Make)) {
-            result.make = vpicResult.Make.toUpperCase();
-          }
-          if (isUseful(vpicResult.Model)) {
-            result.model = vpicResult.Model.toUpperCase();
-          }
-          if (isUseful(vpicResult.ModelYear)) {
-            const parsedYear = parseInt(vpicResult.ModelYear, 10);
-            if (!isNaN(parsedYear)) result.year = parsedYear;
-          }
-          if (isUseful(vpicResult.FuelTypePrimary)) {
-            result.fuel = vpicResult.FuelTypePrimary;
-          }
-          if (isUseful(vpicResult.EngineModel)) {
-            result.engine = vpicResult.EngineModel;
-          }
-          if (isUseful(vpicResult.DisplacementL)) {
-            result.displacement = `${vpicResult.DisplacementL}L`;
-          }
+          // Vincario devuelve un array "decode" con objetos {id, label, value}
+          if (vincarioData?.decode && Array.isArray(vincarioData.decode)) {
+            const decoded = vincarioData.decode;
 
-          result.sources.push('vpic');
+            /**
+             * Helper: busca un valor en el array de decode por su label o id.
+             * Devuelve null si no existe o si el valor está vacío.
+             */
+            const findValue = (labels: string[], ids: string[] = []): string | null => {
+              for (const item of decoded) {
+                const matchLabel = labels.some((l) =>
+                  item.label?.toLowerCase().includes(l.toLowerCase()),
+                );
+                const matchId = ids.some((id) => item.id === id);
+                if (matchLabel || matchId) {
+                  const val = String(item.value ?? '').trim();
+                  if (val && val !== 'null' && val !== 'undefined') return val;
+                }
+              }
+              return null;
+            };
+
+            const make = findValue(['Make'], ['make']);
+            const model = findValue(['Model'], ['model']);
+            const year = findValue(['Model Year', 'Production Year'], ['model_year']);
+            const fuel = findValue(['Fuel Type', 'Fuel'], ['fuel_type_primary']);
+            const engine = findValue(['Engine Code', 'Engine Model', 'Engine Type'], ['engine_code', 'engine_type']);
+            const displacement = findValue(['Displacement', 'Engine Displacement'], ['displacement']);
+            const power = findValue(['Power', 'Engine Power'], ['engine_power_kw', 'engine_power_hp']);
+            const transmission = findValue(['Transmission', 'Gearbox'], ['transmission']);
+            const bodyType = findValue(['Body', 'Body Type', 'Body Style'], ['body_type']);
+
+            if (make) result.make = make.toUpperCase();
+            if (model) result.model = model.toUpperCase();
+            if (year) {
+              const parsedYear = parseInt(year, 10);
+              if (!isNaN(parsedYear)) result.year = parsedYear;
+            }
+            if (fuel) result.fuel = fuel;
+            if (engine) result.engine = engine;
+            if (displacement) result.displacement = displacement;
+            if (power) result.power = power;
+            if (transmission) result.transmission = transmission;
+            if (bodyType) result.bodyType = bodyType;
+
+            result.sources.push('vincario');
+          }
+        } else {
+          const errorText = await vincarioResponse.text();
+          console.warn(`[VIN Decode] Vincario respondió ${vincarioResponse.status}: ${errorText}`);
         }
       }
-    } catch (vpicError: unknown) {
-      // vPIC falló o hizo timeout → seguimos con datos locales, nunca bloqueamos al operario
-      const errorMessage = vpicError instanceof Error ? vpicError.message : 'Unknown error';
-      console.warn(`[VIN Decode] vPIC falló para ${vin}: ${errorMessage}`);
+    } catch (vincarioError: unknown) {
+      // Vincario falló o hizo timeout → seguimos con datos locales
+      const errorMessage = vincarioError instanceof Error ? vincarioError.message : 'Unknown error';
+      console.warn(`[VIN Decode] Vincario falló para ${vin}: ${errorMessage}`);
     }
 
     // ── 5. Guardar en caché (vehicle_lookups) ──
@@ -131,10 +167,9 @@ export async function POST(request: Request) {
       await supabase.from('vehicle_lookups').insert({
         clave: vin,
         data: result,
-        proveedor: result.sources.includes('vpic') ? 'vpic' : 'local',
+        proveedor: result.sources.includes('vincario') ? 'vincario' : 'local',
       });
     } catch (cacheError) {
-      // Si falla el caché, no bloqueamos la respuesta
       console.warn('[VIN Decode] Error guardando en caché:', cacheError);
     }
 
@@ -149,10 +184,17 @@ export async function POST(request: Request) {
  * ==========================================
  * Documentación de Memoria
  * ==========================================
- * - Se usa AbortController con 5s de timeout para que vPIC nunca bloquee al operario.
- * - La función `isUseful` filtra strings vacíos y "Not Applicable" que vPIC devuelve
- *   frecuentemente para vehículos europeos no vendidos en EE.UU.
- * - La caché en vehicle_lookups evita llamadas repetidas a vPIC para el mismo VIN.
- * - Si Supabase no está disponible (ej. sin auth en modo bypass), el caché falla
- *   silenciosamente y la ruta devuelve datos igualmente.
+ * - Se usa Vincario (API de pago, ~0.05€/consulta) en vez de NHTSA vPIC.
+ *   Vincario da datos mucho más completos para coches europeos: motor, 
+ *   combustible, potencia, transmisión, carrocería.
+ * - La decodificación local (WMI) se mantiene como fallback gratuito: si 
+ *   Vincario falla o hace timeout (5s), el operario nunca se queda bloqueado.
+ * - La caché en vehicle_lookups evita consultas repetidas (y costes) para 
+ *   el mismo VIN.
+ * - Vincario devuelve un array `decode` con objetos {id, label, value}.
+ *   El helper `findValue` busca por label e id para ser resiliente a cambios
+ *   en la API.
+ * - LECCIÓN APRENDIDA: NHTSA vPIC es gratuita pero inútil para coches
+ *   europeos (no da motor ni combustible). Vincario es la opción correcta
+ *   para el mercado español.
  */

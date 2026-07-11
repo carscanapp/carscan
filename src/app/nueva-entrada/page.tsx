@@ -12,6 +12,8 @@ interface VehicleData {
   modelo: string;
   motor_codigo: string;
   year: string;
+  combustible: string;
+  potencia: string;
 }
 
 interface ValidationErrors {
@@ -20,7 +22,7 @@ interface ValidationErrors {
   general?: string;
 }
 
-type DataSource = 'none' | 'local' | 'vpic' | 'matricula' | 'cache';
+type DataSource = 'none' | 'local' | 'vincario' | 'matricula' | 'cache';
 
 // 2. Styled Components / Tailwind classes (mobile-first, alto contraste, guantes)
 const styles = {
@@ -55,6 +57,8 @@ export default function NuevaEntradaPage() {
     modelo: '',
     motor_codigo: '',
     year: '',
+    combustible: '',
+    potencia: '',
   });
   const [errors, setErrors] = useState<ValidationErrors>({});
 
@@ -135,7 +139,7 @@ export default function NuevaEntradaPage() {
         setDataSource('matricula');
 
       } else if (formData.vin && isValidVIN(formData.vin)) {
-        // VIN válido → nueva API /api/vin/decode (local + NHTSA vPIC)
+        // VIN válido → /api/vin/decode (local WMI + Vincario)
         const res = await fetch('/api/vin/decode', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -145,20 +149,26 @@ export default function NuevaEntradaPage() {
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Error al decodificar el VIN');
 
+        // Construir string de motor con lo que haya (engine, displacement, power)
+        const motorParts = [data.engine, data.displacement].filter(Boolean);
+        const motorStr = motorParts.join(' ') || '';
+
         setFormData((prev) => ({
           ...prev,
           marca: data.make || prev.marca,
           modelo: data.model || prev.modelo,
-          motor_codigo: data.engine || data.displacement || prev.motor_codigo,
+          motor_codigo: motorStr || prev.motor_codigo,
           year: data.year ? String(data.year) : prev.year,
+          combustible: data.fuel || prev.combustible,
+          potencia: data.power || prev.potencia,
         }));
 
         // Determinar la fuente de datos para mostrar advertencia si solo es local
         const sources: string[] = data.sources || [];
         if (sources.includes('cache')) {
           setDataSource('cache');
-        } else if (sources.includes('vpic')) {
-          setDataSource('vpic');
+        } else if (sources.includes('vincario')) {
+          setDataSource('vincario');
         } else {
           setDataSource('local');
         }
@@ -217,9 +227,9 @@ export default function NuevaEntradaPage() {
           </div>
         )}
 
-        {step === 2 && (dataSource === 'vpic' || dataSource === 'cache') && (
+        {step === 2 && (dataSource === 'vincario' || dataSource === 'cache') && (
           <div className={styles.infoBanner}>
-            ✅ Datos obtenidos correctamente. Revisa que sean correctos antes de continuar.
+            ✅ Datos obtenidos de Vincario. Revisa que sean correctos antes de continuar.
           </div>
         )}
 
@@ -316,7 +326,33 @@ export default function NuevaEntradaPage() {
                   value={formData.motor_codigo}
                   onChange={handleInputChange}
                   className={styles.input}
-                  placeholder="Ej. 1.5DCI 85 (opcional)"
+                  placeholder="Ej. D5244T4 2.4L"
+                />
+              </div>
+
+              <div className={styles.formGroup}>
+                <label htmlFor="combustible" className={styles.label}>Combustible</label>
+                <input
+                  id="combustible"
+                  name="combustible"
+                  type="text"
+                  value={formData.combustible}
+                  onChange={handleInputChange}
+                  className={styles.input}
+                  placeholder="Ej. Diesel"
+                />
+              </div>
+
+              <div className={styles.formGroup}>
+                <label htmlFor="potencia" className={styles.label}>Potencia</label>
+                <input
+                  id="potencia"
+                  name="potencia"
+                  type="text"
+                  value={formData.potencia}
+                  onChange={handleInputChange}
+                  className={styles.input}
+                  placeholder="Ej. 185 CV"
                 />
               </div>
             </>
@@ -346,16 +382,11 @@ export default function NuevaEntradaPage() {
  * Documentación de Memoria
  * ==========================================
  * ¿Por qué se tomó esta decisión técnica?
- * - Se elimina la dependencia de Vincario (API de pago) y se sustituye por:
- *   (a) decodificación local del WMI (instantánea, sin red)
- *   (b) NHTSA vPIC (gratuita, complementaria)
- * - Se mantiene el flujo de 2 pasos para que el operario confirme siempre.
- * - Se diferencia visualmente con banners de color:
- *   - Amarillo: datos solo locales (WMI) → "Verificar datos"
- *   - Azul: datos de vPIC o caché → "Revisa que sean correctos"
- *   - Amarillo (fetchError): la API falló → relleno manual
- * - El campo `year` se añade como dato del vehículo, ya que la decodificación
- *   local siempre puede aportar el año del modelo.
- * - Edge case cubierto: si el VIN tiene 17 chars pero falla el check digit,
- *   el botón queda deshabilitado y no se puede hacer submit.
+ * - Se usa Vincario (API de pago) para datos completos de coches europeos.
+ *   La decodificación local WMI actúa como fallback instantáneo y gratuito.
+ * - LECCIÓN APRENDIDA: NHTSA vPIC es gratuita pero no devuelve motor ni
+ *   combustible para coches europeos. Vincario sí lo hace.
+ * - Campos extra de Vincario: combustible y potencia se muestran en el
+ *   formulario para que el operario no tenga que buscar esa info.
+ * - Se mantiene el flujo de 2 pasos para confirmar los datos.
  */
