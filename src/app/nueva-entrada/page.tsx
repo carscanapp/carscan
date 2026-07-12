@@ -3,20 +3,12 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { isValidVIN, validateVIN } from '@/lib/vin';
+import VehicleSummary, { type VehicleInfo } from '@/components/VehicleSummary';
+import PartsChecklist, { DEFAULT_PARTS, type PartEntry, type PartStatus } from '@/components/PartsChecklist';
 
 // 1. Interfaces
-interface VehicleData {
-  matricula: string;
-  vin: string;
-  marca: string;
-  modelo: string;
-  version: string;
-  motor_codigo: string;
-  year: string;
-  combustible: string;
-  potencia: string;
-  carroceria: string;
-  traccion: string;
+interface VehicleData extends VehicleInfo {
+  displacement: string;
 }
 
 interface ValidationErrors {
@@ -27,9 +19,10 @@ interface ValidationErrors {
 
 type DataSource = 'none' | 'local' | 'vincario' | 'matricula' | 'cache';
 
-// 2. Styled Components / Tailwind classes (mobile-first, alto contraste, guantes)
+// 2. Estilos (mobile-first, alto contraste, guantes)
 const styles = {
-  container: 'min-h-screen bg-slate-50 p-4 pb-24',
+  container: 'min-h-screen bg-slate-50',
+  searchContainer: 'p-4 pb-24',
   header: 'mb-6',
   title: 'text-2xl font-bold text-slate-900',
   subtitle: 'text-slate-600',
@@ -39,7 +32,7 @@ const styles = {
   input: 'w-full rounded-xl border-2 border-slate-300 p-4 text-xl uppercase outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100 transition-all disabled:bg-slate-100 disabled:text-slate-500',
   inputError: 'border-red-500 focus:border-red-600 focus:ring-red-100',
   errorText: 'mt-2 text-sm font-bold text-red-600',
-  button: 'mt-8 w-full rounded-xl bg-blue-600 py-5 text-2xl font-bold text-white shadow-lg hover:bg-blue-700 active:bg-blue-800 disabled:opacity-50 transition-all flex items-center justify-center',
+  button: 'mt-6 w-full rounded-xl bg-blue-600 py-5 text-2xl font-bold text-white shadow-lg hover:bg-blue-700 active:bg-blue-800 disabled:opacity-50 transition-all flex items-center justify-center',
   warningBanner: 'mb-4 p-4 rounded-lg bg-yellow-50 border-l-4 border-yellow-400 text-yellow-800 font-medium',
   errorBanner: 'mb-4 p-4 rounded-lg bg-red-50 border-l-4 border-red-500 text-red-800 font-bold',
   infoBanner: 'mb-4 p-4 rounded-lg bg-blue-50 border-l-4 border-blue-400 text-blue-800 font-medium',
@@ -65,8 +58,14 @@ export default function NuevaEntradaPage() {
     potencia: '',
     carroceria: '',
     traccion: '',
+    displacement: '',
   });
   const [errors, setErrors] = useState<ValidationErrors>({});
+
+  // Estado del checklist de piezas (inicializado con las 25 piezas)
+  const [parts, setParts] = useState<PartEntry[]>(
+    DEFAULT_PARTS.map((name) => ({ name, status: null }))
+  );
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -74,7 +73,7 @@ export default function NuevaEntradaPage() {
     
     setFormData((prev) => ({ ...prev, [name]: upperValue }));
 
-    // Validar VIN en tiempo real si se está rellenando
+    // Validar VIN en tiempo real
     if (name === 'vin') {
       if (upperValue.length > 0 && upperValue.length < 17) {
         setErrors((prev) => ({ ...prev, vin: 'El VIN debe tener 17 caracteres.', vinWarning: undefined }));
@@ -83,7 +82,6 @@ export default function NuevaEntradaPage() {
         if (!result.valid) {
           setErrors((prev) => ({ ...prev, vin: result.errorMessage, vinWarning: undefined }));
         } else {
-          // VIN es válido — el check digit es solo un aviso informativo
           setErrors((prev) => ({
             ...prev,
             vin: undefined,
@@ -97,7 +95,6 @@ export default function NuevaEntradaPage() {
       }
     }
 
-    // Limpiar error general si el usuario empieza a escribir
     if (errors.general) {
       setErrors((prev) => ({ ...prev, general: undefined }));
     }
@@ -109,9 +106,7 @@ export default function NuevaEntradaPage() {
       return;
     }
 
-    if (formData.vin && errors.vin) {
-      return;
-    }
+    if (formData.vin && errors.vin) return;
     
     setLoading(true);
     setFetchError(null);
@@ -155,7 +150,6 @@ export default function NuevaEntradaPage() {
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Error al decodificar el VIN');
 
-        // Construir string de motor con lo que haya (engine, displacement, power)
         const motorParts = [data.engine, data.displacement].filter(Boolean);
         const motorStr = motorParts.join(' ') || '';
 
@@ -170,9 +164,9 @@ export default function NuevaEntradaPage() {
           potencia: data.power || prev.potencia,
           carroceria: data.bodyType || prev.carroceria,
           traccion: data.drive || prev.traccion,
+          displacement: data.displacement || prev.displacement,
         }));
 
-        // Determinar la fuente de datos para mostrar advertencia si solo es local
         const sources: string[] = data.sources || [];
         if (sources.includes('cache')) {
           setDataSource('cache');
@@ -188,68 +182,99 @@ export default function NuevaEntradaPage() {
       const message = err instanceof Error ? err.message : 'Error desconocido al buscar los datos.';
       console.error(err);
       setFetchError(message);
-      // Pasamos al paso 2 de todas formas para relleno manual
       setStep(2);
     } finally {
       setLoading(false);
     }
   };
 
+  const handlePartStatusChange = (index: number, status: PartStatus) => {
+    setParts((prev) => {
+      const updated = [...prev];
+      updated[index] = { ...updated[index], status };
+      return updated;
+    });
+  };
+
+  const handleFinalize = () => {
+    console.log('Guardando entrada:', { vehicle: formData, parts });
+    alert(`Entrada guardada:\n${parts.filter(p => p.status === 'guardar').length} piezas a guardar\n${parts.filter(p => p.status === 'desechar').length} a desechar`);
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-
     if (step === 1) {
       handleSearch();
-    } else {
-      console.log('Guardando datos y pasando a checklist:', formData);
-      alert('Datos confirmados. Aquí iríamos al checklist de piezas.');
     }
   };
 
-  /** Indica si el botón de búsqueda debe estar deshabilitado */
   const isSearchDisabled = loading
     || (!formData.matricula && !formData.vin)
     || (formData.vin.length > 0 && formData.vin.length < 17)
     || (formData.vin.length === 17 && !!errors.vin);
 
+  // ───────────────────────────────────────────────────────
+  // STEP 2: Resumen + Checklist
+  // ───────────────────────────────────────────────────────
+  if (step === 2) {
+    return (
+      <main className={styles.container}>
+        {/* Resumen del vehículo */}
+        <VehicleSummary
+          vehicle={formData}
+          onEdit={() => setStep(1)}
+        />
+
+        {/* Banners de estado */}
+        <div className="px-4 pt-3">
+          {fetchError && (
+            <div className={styles.warningBanner}>
+              ⚠️ {fetchError}. Rellena los datos manualmente.
+            </div>
+          )}
+          {dataSource === 'local' && (
+            <div className={styles.warningBanner}>
+              ⚠️ <strong>Verificar datos:</strong> Solo se pudo deducir la marca del código del fabricante.
+            </div>
+          )}
+        </div>
+
+        {/* Checklist de piezas */}
+        <div className="p-4">
+          <PartsChecklist
+            parts={parts}
+            onStatusChange={handlePartStatusChange}
+          />
+
+          {/* Botón finalizar */}
+          <button
+            type="button"
+            onClick={handleFinalize}
+            className="mt-6 w-full rounded-xl bg-green-600 py-5 text-2xl font-bold text-white shadow-lg hover:bg-green-700 active:bg-green-800 transition-all flex items-center justify-center"
+          >
+            💾 Guardar Entrada
+          </button>
+        </div>
+      </main>
+    );
+  }
+
+  // ───────────────────────────────────────────────────────
+  // STEP 1: Búsqueda (Matrícula o VIN)
+  // ───────────────────────────────────────────────────────
   return (
-    <main className={styles.container}>
+    <main className={`${styles.container} ${styles.searchContainer}`}>
       <header className={styles.header}>
         <h1 className={styles.title}>Nueva Entrada</h1>
-        <p className={styles.subtitle}>
-          {step === 1 ? 'Paso 1: Identificación' : 'Paso 2: Confirmación de Datos'}
-        </p>
+        <p className={styles.subtitle}>Introduce matrícula o bastidor</p>
       </header>
 
       <div className={styles.card}>
-        {/* Banners de estado */}
-        {fetchError && (
-          <div className={styles.warningBanner}>
-            ⚠️ No se encontraron datos automáticamente: {fetchError}. Rellena los datos a mano.
-          </div>
-        )}
-
-        {step === 2 && dataSource === 'local' && (
-          <div className={styles.warningBanner}>
-            ⚠️ <strong>Verificar datos:</strong> La marca y el año se han deducido del código del fabricante (WMI). 
-            El modelo y motor no se pudieron obtener automáticamente. Por favor, confírmalos manualmente.
-          </div>
-        )}
-
-        {step === 2 && (dataSource === 'vincario' || dataSource === 'cache') && (
-          <div className={styles.infoBanner}>
-            ✅ Datos obtenidos de Vincario. Revisa que sean correctos antes de continuar.
-          </div>
-        )}
-
         {errors.general && (
-          <div className={styles.errorBanner}>
-            {errors.general}
-          </div>
+          <div className={styles.errorBanner}>{errors.general}</div>
         )}
 
         <form onSubmit={handleSubmit}>
-          
           <div className={styles.formGroup}>
             <label htmlFor="matricula" className={styles.label}>Matrícula</label>
             <input
@@ -260,7 +285,6 @@ export default function NuevaEntradaPage() {
               onChange={handleInputChange}
               className={styles.input}
               placeholder="Ej. 1234ABC"
-              readOnly={step === 2}
             />
           </div>
 
@@ -274,8 +298,7 @@ export default function NuevaEntradaPage() {
               value={formData.vin}
               onChange={handleInputChange}
               className={`${styles.input} ${errors.vin ? styles.inputError : ''}`}
-              placeholder="17 caracteres (opcional si hay matrícula)"
-              readOnly={step === 2 && formData.vin.length === 17 && !errors.vin}
+              placeholder="17 caracteres"
             />
             {errors.vin && <p className={styles.errorText}>{errors.vin}</p>}
             {!errors.vin && errors.vinWarning && (
@@ -283,140 +306,15 @@ export default function NuevaEntradaPage() {
             )}
           </div>
 
-          {step === 2 && (
-            <>
-              <div className={styles.formGroup}>
-                <label htmlFor="marca" className={styles.label}>Marca</label>
-                <input
-                  id="marca"
-                  name="marca"
-                  type="text"
-                  value={formData.marca}
-                  onChange={handleInputChange}
-                  className={styles.input}
-                  placeholder="Ej. RENAULT"
-                  required
-                />
-              </div>
-
-              <div className={styles.formGroup}>
-                <label htmlFor="modelo" className={styles.label}>Modelo</label>
-                <input
-                  id="modelo"
-                  name="modelo"
-                  type="text"
-                  value={formData.modelo}
-                  onChange={handleInputChange}
-                  className={styles.input}
-                  placeholder="Ej. MEGANE"
-                  required
-                />
-              </div>
-
-              <div className={styles.formGroup}>
-                <label htmlFor="version" className={styles.label}>Versión / Acabado</label>
-                <input
-                  id="version"
-                  name="version"
-                  type="text"
-                  value={formData.version}
-                  onChange={handleInputChange}
-                  className={styles.input}
-                  placeholder="Ej. D5 5DR 6SP A"
-                />
-              </div>
-
-              <div className={styles.formGroup}>
-                <label htmlFor="year" className={styles.label}>Año</label>
-                <input
-                  id="year"
-                  name="year"
-                  type="text"
-                  value={formData.year}
-                  onChange={handleInputChange}
-                  className={styles.input}
-                  placeholder="Ej. 2018"
-                />
-              </div>
-
-              <div className={styles.formGroup}>
-                <label htmlFor="carroceria" className={styles.label}>Carrocería</label>
-                <input
-                  id="carroceria"
-                  name="carroceria"
-                  type="text"
-                  value={formData.carroceria}
-                  onChange={handleInputChange}
-                  className={styles.input}
-                  placeholder="Ej. Wagon, Sedan, SUV"
-                />
-              </div>
-
-              <div className={styles.formGroup}>
-                <label htmlFor="motor_codigo" className={styles.label}>Motor</label>
-                <input
-                  id="motor_codigo"
-                  name="motor_codigo"
-                  type="text"
-                  value={formData.motor_codigo}
-                  onChange={handleInputChange}
-                  className={styles.input}
-                  placeholder="Ej. D5244T4 2.4L"
-                />
-              </div>
-
-              <div className={styles.formGroup}>
-                <label htmlFor="combustible" className={styles.label}>Combustible</label>
-                <input
-                  id="combustible"
-                  name="combustible"
-                  type="text"
-                  value={formData.combustible}
-                  onChange={handleInputChange}
-                  className={styles.input}
-                  placeholder="Ej. Diesel"
-                />
-              </div>
-
-              <div className={styles.formGroup}>
-                <label htmlFor="potencia" className={styles.label}>Potencia</label>
-                <input
-                  id="potencia"
-                  name="potencia"
-                  type="text"
-                  value={formData.potencia}
-                  onChange={handleInputChange}
-                  className={styles.input}
-                  placeholder="Ej. 185 CV"
-                />
-              </div>
-
-              <div className={styles.formGroup}>
-                <label htmlFor="traccion" className={styles.label}>Tracción</label>
-                <input
-                  id="traccion"
-                  name="traccion"
-                  type="text"
-                  value={formData.traccion}
-                  onChange={handleInputChange}
-                  className={styles.input}
-                  placeholder="Ej. 4x4, Delantera"
-                />
-              </div>
-            </>
-          )}
-
-          <button 
-            type="submit" 
+          <button
+            type="submit"
             className={styles.button}
-            disabled={step === 1 ? isSearchDisabled : false}
+            disabled={isSearchDisabled}
           >
             {loading ? (
               <span className="animate-pulse">Buscando datos...</span>
-            ) : step === 1 ? (
-              '🔍 Buscar Datos del Vehículo'
             ) : (
-              '✅ Continuar al Checklist'
+              '🔍 Buscar Datos del Vehículo'
             )}
           </button>
         </form>
@@ -429,12 +327,12 @@ export default function NuevaEntradaPage() {
  * ==========================================
  * Documentación de Memoria
  * ==========================================
- * ¿Por qué se tomó esta decisión técnica?
- * - Se usa Vincario (API de pago) para datos completos de coches europeos.
- *   La decodificación local WMI actúa como fallback instantáneo y gratuito.
- * - LECCIÓN APRENDIDA: NHTSA vPIC es gratuita pero no devuelve motor ni
- *   combustible para coches europeos. Vincario sí lo hace.
- * - Campos extra de Vincario: combustible y potencia se muestran en el
- *   formulario para que el operario no tenga que buscar esa info.
- * - Se mantiene el flujo de 2 pasos para confirmar los datos.
+ * - Step 1: formulario simple (matrícula o VIN) — pantalla limpia.
+ * - Step 2: resumen compacto del vehículo (VehicleSummary) + ficha desplegable
+ *   + checklist de 25 piezas (PartsChecklist). Se eliminaron los inputs editables
+ *   de marca/modelo/año del Step 2 — ahora son solo lectura en el resumen.
+ * - El botón "Editar" del VehicleSummary vuelve al Step 1.
+ * - LECCIÓN APRENDIDA: el operario no quiere rellenar campos de texto uno a uno
+ *   en la campa con guantes. Quiere ver un resumen rápido y tocar botones de
+ *   guardar/desechar en las piezas.
  */
