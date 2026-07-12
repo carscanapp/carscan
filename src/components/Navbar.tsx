@@ -16,7 +16,7 @@ export default function Navbar() {
   if (pathname === '/login') return null;
 
   return (
-    <nav className="sticky top-0 z-50 flex items-center justify-between bg-white border-b border-slate-200 px-4 py-2 shadow-sm">
+    <nav className="sticky top-0 z-50 flex items-center justify-between px-4 py-2 shadow-sm" style={{ backgroundColor: '#ca3143' }}>
       <Link href="/" className="flex items-center gap-2" aria-label="Volver al inicio">
         <Image
           src="/logo-carscan.png"
@@ -27,13 +27,6 @@ export default function Navbar() {
           priority
         />
       </Link>
-
-      {/* Indicador de página actual (útil para el operario) */}
-      {pathname !== '/' && (
-        <span className="text-sm font-medium text-slate-500 truncate max-w-[160px]">
-          {pathname === '/nueva-entrada' && 'Nueva Entrada'}
-        </span>
-      )}
     </nav>
   );
 }

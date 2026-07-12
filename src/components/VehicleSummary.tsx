@@ -83,10 +83,12 @@ export default function VehicleSummary({ vehicle, onEdit }: VehicleSummaryProps)
           <button
             type="button"
             onClick={onEdit}
-            className="shrink-0 rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 active:bg-slate-100 transition-colors"
-            aria-label="Editar datos del vehículo"
+            className="shrink-0 w-10 h-10 rounded-full border border-slate-300 flex items-center justify-center text-slate-500 hover:bg-slate-50 active:bg-slate-100 transition-colors"
+            aria-label="Volver a buscar"
           >
-            ✏️ Editar
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/>
+            </svg>
           </button>
         </div>
       </div>
@@ -96,13 +98,24 @@ export default function VehicleSummary({ vehicle, onEdit }: VehicleSummaryProps)
         <button
           type="button"
           onClick={() => setDetailsOpen(!detailsOpen)}
-          className="w-full flex items-center justify-between px-4 py-2.5 text-sm font-medium text-blue-600 hover:bg-blue-50 active:bg-blue-100 transition-colors"
+          className="w-full flex items-center justify-between px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 active:bg-slate-100 transition-colors"
           aria-expanded={detailsOpen}
         >
-          <span>📋 Ficha técnica completa</span>
-          <span className={`transition-transform duration-200 ${detailsOpen ? 'rotate-180' : ''}`}>
-            ▼
-          </span>
+          <span>Ficha técnica completa</span>
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className={`transition-transform duration-200 text-slate-400 ${detailsOpen ? 'rotate-180' : ''}`}
+          >
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
         </button>
 
         {detailsOpen && (
