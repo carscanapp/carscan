@@ -23,9 +23,6 @@ export default async function HomePage() {
   return (
     <div className="flex min-h-screen flex-col bg-slate-100">
       <main className="flex-1 p-4 pb-24">
-        <div className="mb-4 mt-2">
-          <p className="text-sm text-slate-600">{profile?.nombre || user?.email || 'Bypass'}</p>
-        </div>
 
         <div className="mb-8 mt-4 text-center">
           <h2 className="text-2xl font-bold text-slate-800 mb-6">¿Qué quieres hacer?</h2>
