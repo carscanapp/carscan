@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { createHash } from 'crypto';
 import { validateVIN } from '@/lib/vin/validate';
 import { decodeVinLocal } from '@/lib/vin/wmi';
 import { createClient } from '@/lib/supabase/server';
@@ -93,7 +94,14 @@ export async function POST(request: Request) {
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), VINCARIO_TIMEOUT_MS);
 
-        const vincarioUrl = `https://api.vindecoder.eu/3.2/${apiKey}/${secretKey}/decode/${vin}.json`;
+        // Vincario requiere un control sum: primeros 10 chars de SHA1("VIN|id|API_KEY|SECRET_KEY")
+        const id = 'decode';
+        const controlSum = createHash('sha1')
+          .update(`${vin}|${id}|${apiKey}|${secretKey}`)
+          .digest('hex')
+          .substring(0, 10);
+
+        const vincarioUrl = `https://api.vindecoder.eu/3.2/${apiKey}/${controlSum}/decode/${vin}.json`;
         const vincarioResponse = await fetch(vincarioUrl, {
           signal: controller.signal,
           headers: { Accept: 'application/json' },
@@ -126,15 +134,18 @@ export async function POST(request: Request) {
               return null;
             };
 
-            const make = findValue(['Make'], ['make']);
-            const model = findValue(['Model'], ['model']);
-            const year = findValue(['Model Year', 'Production Year'], ['model_year']);
-            const fuel = findValue(['Fuel Type', 'Fuel'], ['fuel_type_primary']);
-            const engine = findValue(['Engine Code', 'Engine Model', 'Engine Type'], ['engine_code', 'engine_type']);
-            const displacement = findValue(['Displacement', 'Engine Displacement'], ['displacement']);
-            const power = findValue(['Power', 'Engine Power'], ['engine_power_kw', 'engine_power_hp']);
-            const transmission = findValue(['Transmission', 'Gearbox'], ['transmission']);
-            const bodyType = findValue(['Body', 'Body Type', 'Body Style'], ['body_type']);
+            const make = findValue(['Make']);
+            const model = findValue(['Model']);
+            const year = findValue(['Model Year']);
+            const fuel = findValue(['Fuel Type - Primary', 'Fuel Type']);
+            const engineCode = findValue(['Engine Code']);
+            const engineModel = findValue(['Engine Model']);
+            const displacementCcm = findValue(['Engine Displacement (ccm)']);
+            const powerHP = findValue(['Engine Power (HP)']);
+            const powerKW = findValue(['Engine Power (kW)']);
+            const transmission = findValue(['Transmission', 'Number Of Gears']);
+            const bodyType = findValue(['Body']);
+            const trim = findValue(['Trim']);
 
             if (make) result.make = make.toUpperCase();
             if (model) result.model = model.toUpperCase();
@@ -143,9 +154,21 @@ export async function POST(request: Request) {
               if (!isNaN(parsedYear)) result.year = parsedYear;
             }
             if (fuel) result.fuel = fuel;
-            if (engine) result.engine = engine;
-            if (displacement) result.displacement = displacement;
-            if (power) result.power = power;
+            // Motor: preferimos Engine Model (ej "D5244T4"), si no Engine Code
+            result.engine = engineModel || engineCode || '';
+            // Displacement: formateamos de ccm a litros (ej: 2400 → "2.4L")
+            if (displacementCcm) {
+              const ccm = parseInt(displacementCcm, 10);
+              if (!isNaN(ccm)) result.displacement = `${(ccm / 1000).toFixed(1)}L`;
+            }
+            // Potencia: preferimos HP, y si tenemos kW lo ponemos entre paréntesis
+            if (powerHP && powerKW) {
+              result.power = `${powerHP} CV (${powerKW} kW)`;
+            } else if (powerHP) {
+              result.power = `${powerHP} CV`;
+            } else if (powerKW) {
+              result.power = `${powerKW} kW`;
+            }
             if (transmission) result.transmission = transmission;
             if (bodyType) result.bodyType = bodyType;
 
