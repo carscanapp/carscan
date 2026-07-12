@@ -310,9 +310,6 @@ export default function NuevaEntradaPage() {
               placeholder="17 caracteres"
             />
             {errors.vin && <p className={styles.errorText}>{errors.vin}</p>}
-            {!errors.vin && errors.vinWarning && (
-              <p className="mt-2 text-sm font-medium text-yellow-600">ℹ️ {errors.vinWarning}</p>
-            )}
           </div>
 
           <button
