@@ -6,11 +6,13 @@ export type PartStatus = 'guardar' | 'desechar' | 'no_tiene' | null;
 export interface PartEntry {
   name: string;
   status: PartStatus;
+  notes: string;
 }
 
 interface PartsChecklistProps {
   parts: PartEntry[];
   onStatusChange: (index: number, status: PartStatus) => void;
+  onNotesChange: (index: number, notes: string) => void;
 }
 
 /** Las 25 piezas de la hoja de papel del desguace, en orden */
@@ -77,7 +79,7 @@ const statusConfig: Record<
  * Los botones son grandes y con emojis para facilitar el uso con guantes.
  * Mobile-first: ocupa todo el ancho, botones de tamaño mínimo 44px (A11y).
  */
-export default function PartsChecklist({ parts, onStatusChange }: PartsChecklistProps) {
+export default function PartsChecklist({ parts, onStatusChange, onNotesChange }: PartsChecklistProps) {
   // Contar estados para el resumen
   const counts = {
     guardar: parts.filter((p) => p.status === 'guardar').length,
@@ -106,47 +108,58 @@ export default function PartsChecklist({ parts, onStatusChange }: PartsChecklist
         {parts.map((part, index) => (
           <div
             key={part.name}
-            className={`px-4 py-3 flex items-center justify-between gap-2 transition-colors ${
+            className={`px-4 py-3 transition-colors ${
               part.status ? 'bg-white' : 'bg-yellow-50/30'
             }`}
           >
-            {/* Nombre de la pieza */}
-            <span
-              className={`text-sm font-semibold min-w-0 flex-1 ${
-                part.status === 'desechar'
-                  ? 'text-red-400 line-through'
-                  : part.status === 'no_tiene'
-                    ? 'text-slate-400'
-                    : 'text-slate-800'
-              }`}
-            >
-              {part.name}
-            </span>
+            {/* Fila: nombre + botones */}
+            <div className="flex items-center justify-between gap-2">
+              <span
+                className={`text-sm font-semibold min-w-0 flex-1 ${
+                  part.status === 'desechar'
+                    ? 'text-red-400 line-through'
+                    : part.status === 'no_tiene'
+                      ? 'text-slate-400'
+                      : 'text-slate-800'
+                }`}
+              >
+                {part.name}
+              </span>
 
-            {/* Botones de estado */}
-            <div className="flex gap-1.5 shrink-0">
-              {(Object.keys(statusConfig) as Array<NonNullable<PartStatus>>).map((status) => {
-                const config = statusConfig[status];
-                const isActive = part.status === status;
+              {/* Botones de estado */}
+              <div className="flex gap-1.5 shrink-0">
+                {(Object.keys(statusConfig) as Array<NonNullable<PartStatus>>).map((status) => {
+                  const config = statusConfig[status];
+                  const isActive = part.status === status;
 
-                return (
-                  <button
-                    key={status}
-                    type="button"
-                    onClick={() => onStatusChange(index, isActive ? null : status)}
-                    className={`
-                      min-w-[44px] min-h-[44px] rounded-xl border-2 px-2 py-1.5
-                      text-xs font-bold transition-all active:scale-95
-                      ${isActive ? config.bgActive : `${config.bg} ${config.text}`}
-                    `}
-                    aria-label={`${part.name}: ${config.label}`}
-                    aria-pressed={isActive}
-                  >
-                    <span className="block text-base leading-none">{config.emoji}</span>
-                  </button>
-                );
-              })}
+                  return (
+                    <button
+                      key={status}
+                      type="button"
+                      onClick={() => onStatusChange(index, isActive ? null : status)}
+                      className={`
+                        min-w-[44px] min-h-[44px] rounded-xl border-2 px-2 py-1.5
+                        text-xs font-bold transition-all active:scale-95
+                        ${isActive ? config.bgActive : `${config.bg} ${config.text}`}
+                      `}
+                      aria-label={`${part.name}: ${config.label}`}
+                      aria-pressed={isActive}
+                    >
+                      <span className="block text-base leading-none">{config.emoji}</span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
+
+            {/* Campo de observaciones */}
+            <input
+              type="text"
+              value={part.notes}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => onNotesChange(index, e.target.value)}
+              placeholder="Observaciones..."
+              className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 placeholder:text-slate-400 outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-100 transition-colors"
+            />
           </div>
         ))}
       </div>

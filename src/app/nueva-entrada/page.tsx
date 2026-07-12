@@ -64,7 +64,7 @@ export default function NuevaEntradaPage() {
 
   // Estado del checklist de piezas (inicializado con las 25 piezas)
   const [parts, setParts] = useState<PartEntry[]>(
-    DEFAULT_PARTS.map((name) => ({ name, status: null }))
+    DEFAULT_PARTS.map((name) => ({ name, status: null, notes: '' }))
   );
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -196,6 +196,14 @@ export default function NuevaEntradaPage() {
     });
   };
 
+  const handlePartNotesChange = (index: number, notes: string) => {
+    setParts((prev) => {
+      const updated = [...prev];
+      updated[index] = { ...updated[index], notes };
+      return updated;
+    });
+  };
+
   const handleFinalize = () => {
     console.log('Guardando entrada:', { vehicle: formData, parts });
     alert(`Entrada guardada:\n${parts.filter(p => p.status === 'guardar').length} piezas a guardar\n${parts.filter(p => p.status === 'desechar').length} a desechar`);
@@ -244,6 +252,7 @@ export default function NuevaEntradaPage() {
           <PartsChecklist
             parts={parts}
             onStatusChange={handlePartStatusChange}
+            onNotesChange={handlePartNotesChange}
           />
 
           {/* Botón finalizar */}
