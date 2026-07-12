@@ -10,10 +10,13 @@ interface VehicleData {
   vin: string;
   marca: string;
   modelo: string;
+  version: string;
   motor_codigo: string;
   year: string;
   combustible: string;
   potencia: string;
+  carroceria: string;
+  traccion: string;
 }
 
 interface ValidationErrors {
@@ -55,10 +58,13 @@ export default function NuevaEntradaPage() {
     vin: '',
     marca: '',
     modelo: '',
+    version: '',
     motor_codigo: '',
     year: '',
     combustible: '',
     potencia: '',
+    carroceria: '',
+    traccion: '',
   });
   const [errors, setErrors] = useState<ValidationErrors>({});
 
@@ -157,10 +163,13 @@ export default function NuevaEntradaPage() {
           ...prev,
           marca: data.make || prev.marca,
           modelo: data.model || prev.modelo,
+          version: data.trim || prev.version,
           motor_codigo: motorStr || prev.motor_codigo,
           year: data.year ? String(data.year) : prev.year,
           combustible: data.fuel || prev.combustible,
           potencia: data.power || prev.potencia,
+          carroceria: data.bodyType || prev.carroceria,
+          traccion: data.drive || prev.traccion,
         }));
 
         // Determinar la fuente de datos para mostrar advertencia si solo es local
@@ -305,6 +314,19 @@ export default function NuevaEntradaPage() {
               </div>
 
               <div className={styles.formGroup}>
+                <label htmlFor="version" className={styles.label}>Versión / Acabado</label>
+                <input
+                  id="version"
+                  name="version"
+                  type="text"
+                  value={formData.version}
+                  onChange={handleInputChange}
+                  className={styles.input}
+                  placeholder="Ej. D5 5DR 6SP A"
+                />
+              </div>
+
+              <div className={styles.formGroup}>
                 <label htmlFor="year" className={styles.label}>Año</label>
                 <input
                   id="year"
@@ -318,7 +340,20 @@ export default function NuevaEntradaPage() {
               </div>
 
               <div className={styles.formGroup}>
-                <label htmlFor="motor_codigo" className={styles.label}>Motor / Variante</label>
+                <label htmlFor="carroceria" className={styles.label}>Carrocería</label>
+                <input
+                  id="carroceria"
+                  name="carroceria"
+                  type="text"
+                  value={formData.carroceria}
+                  onChange={handleInputChange}
+                  className={styles.input}
+                  placeholder="Ej. Wagon, Sedan, SUV"
+                />
+              </div>
+
+              <div className={styles.formGroup}>
+                <label htmlFor="motor_codigo" className={styles.label}>Motor</label>
                 <input
                   id="motor_codigo"
                   name="motor_codigo"
@@ -353,6 +388,19 @@ export default function NuevaEntradaPage() {
                   onChange={handleInputChange}
                   className={styles.input}
                   placeholder="Ej. 185 CV"
+                />
+              </div>
+
+              <div className={styles.formGroup}>
+                <label htmlFor="traccion" className={styles.label}>Tracción</label>
+                <input
+                  id="traccion"
+                  name="traccion"
+                  type="text"
+                  value={formData.traccion}
+                  onChange={handleInputChange}
+                  className={styles.input}
+                  placeholder="Ej. 4x4, Delantera"
                 />
               </div>
             </>

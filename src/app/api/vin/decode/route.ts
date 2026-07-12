@@ -19,6 +19,8 @@ interface DecodeResult {
   power: string;
   transmission: string;
   bodyType: string;
+  trim: string;
+  drive: string;
   /** Fuentes que aportaron datos: 'local', 'vincario', 'cache' */
   sources: string[];
 }
@@ -81,6 +83,8 @@ export async function POST(request: Request) {
       power: '',
       transmission: '',
       bodyType: '',
+      trim: '',
+      drive: '',
       sources: ['local'],
     };
 
@@ -147,6 +151,7 @@ export async function POST(request: Request) {
             const transmission = findValue(['Transmission', 'Number Of Gears']);
             const bodyType = findValue(['Body']);
             const trim = findValue(['Trim']);
+            const drive = findValue(['Drive']);
 
             if (make) result.make = make.toUpperCase();
             if (model) result.model = model.toUpperCase();
@@ -172,6 +177,8 @@ export async function POST(request: Request) {
             }
             if (transmission) result.transmission = transmission;
             if (bodyType) result.bodyType = bodyType;
+            if (trim) result.trim = trim;
+            if (drive) result.drive = drive;
 
             result.sources.push('vincario');
           }
