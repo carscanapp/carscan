@@ -1,5 +1,7 @@
 'use client';
 
+import { useState } from 'react';
+
 // 1. Interfaces
 export type PartStatus = 'guardar' | 'desechar' | 'no_tiene' | null;
 
@@ -80,6 +82,8 @@ const statusConfig: Record<
  * Mobile-first: ocupa todo el ancho, botones de tamaño mínimo 44px (A11y).
  */
 export default function PartsChecklist({ parts, onStatusChange, onNotesChange }: PartsChecklistProps) {
+  const [search, setSearch] = useState('');
+
   // Contar estados para el resumen
   const counts = {
     guardar: parts.filter((p) => p.status === 'guardar').length,
@@ -87,6 +91,12 @@ export default function PartsChecklist({ parts, onStatusChange, onNotesChange }:
     no_tiene: parts.filter((p) => p.status === 'no_tiene').length,
     pending: parts.filter((p) => p.status === null).length,
   };
+
+  // Filtrar piezas por búsqueda
+  const normalizedSearch = search.toLowerCase().trim();
+  const filteredParts = normalizedSearch
+    ? parts.map((p, i) => ({ ...p, originalIndex: i })).filter((p) => p.name.toLowerCase().includes(normalizedSearch))
+    : parts.map((p, i) => ({ ...p, originalIndex: i }));
 
   return (
     <div className="bg-white rounded-2xl shadow-md overflow-hidden">
@@ -103,9 +113,25 @@ export default function PartsChecklist({ parts, onStatusChange, onNotesChange }:
         </div>
       </div>
 
+      {/* Buscador */}
+      <div className="px-4 py-2 border-b border-slate-100">
+        <div className="relative">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          </svg>
+          <input
+            type="text"
+            value={search}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearch(e.target.value)}
+            placeholder="Buscar pieza..."
+            className="w-full rounded-lg border border-slate-200 pl-9 pr-3 py-2 text-sm text-slate-700 placeholder:text-slate-400 outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-100 transition-colors"
+          />
+        </div>
+      </div>
+
       {/* Lista de piezas */}
       <div className="divide-y divide-slate-100">
-        {parts.map((part, index) => (
+        {filteredParts.map((part) => (
           <div
             key={part.name}
             className={`px-4 py-3 transition-colors ${
@@ -136,9 +162,9 @@ export default function PartsChecklist({ parts, onStatusChange, onNotesChange }:
                     <button
                       key={status}
                       type="button"
-                      onClick={() => onStatusChange(index, isActive ? null : status)}
+                      onClick={() => onStatusChange(part.originalIndex, isActive ? null : status)}
                       className={`
-                        min-w-[44px] min-h-[44px] rounded-xl border-2 px-2 py-1.5
+                        min-w-[44px] min-h-[44px] rounded-lg border px-2 py-1.5
                         text-xs font-bold transition-all active:scale-95
                         ${isActive ? config.bgActive : `${config.bg} ${config.text}`}
                       `}
@@ -156,9 +182,8 @@ export default function PartsChecklist({ parts, onStatusChange, onNotesChange }:
             <input
               type="text"
               value={part.notes}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) => onNotesChange(index, e.target.value)}
-              placeholder="Observaciones..."
-              className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 placeholder:text-slate-400 outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-100 transition-colors"
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => onNotesChange(part.originalIndex, e.target.value)}
+              className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-100 transition-colors"
             />
           </div>
         ))}
