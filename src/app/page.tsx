@@ -22,20 +22,11 @@ export default async function HomePage() {
 
   return (
     <div className="flex min-h-screen flex-col bg-slate-100">
-      <header className="sticky top-0 z-10 flex items-center justify-between bg-blue-600 p-4 text-white shadow-md">
-        <div>
-          <h1 className="text-xl font-bold">Carscan</h1>
-          <p className="text-sm opacity-90">{profile?.nombre || user?.email || 'Bypass'}</p>
-        </div>
-        <form action="/auth/signout" method="post">
-          <button className="rounded-lg bg-blue-700 px-4 py-2 text-sm font-medium hover:bg-blue-800">
-            Salir
-          </button>
-        </form>
-      </header>
-
       <main className="flex-1 p-4 pb-24">
-        {/* Aquí irán los botones principales y el listado */}
+        <div className="mb-4 mt-2">
+          <p className="text-sm text-slate-600">{profile?.nombre || user?.email || 'Bypass'}</p>
+        </div>
+
         <div className="mb-8 mt-4 text-center">
           <h2 className="text-2xl font-bold text-slate-800 mb-6">¿Qué quieres hacer?</h2>
           
