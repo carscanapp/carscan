@@ -57,6 +57,7 @@ export async function POST(request: Request) {
       .from('vehicle_lookups')
       .select('data')
       .eq('clave', vin)
+      .eq('proveedor', 'vincario') // Solo servir caché con datos completos de Vincario
       .order('created_at', { ascending: false })
       .limit(1)
       .single();
