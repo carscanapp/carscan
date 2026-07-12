@@ -91,14 +91,14 @@ export default function PartsChecklist({ parts, onStatusChange, onNotesChange }:
   return (
     <div className="bg-white rounded-2xl shadow-md overflow-hidden">
       {/* Cabecera del checklist */}
-      <div className="px-4 py-3 bg-slate-50 border-b border-slate-200">
-        <h3 className="text-lg font-bold text-slate-900">Checklist de Piezas</h3>
-        <div className="flex gap-3 mt-1 text-xs font-medium">
+      <div className="px-4 py-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+        <h3 className="text-lg font-bold text-slate-900">Despiece</h3>
+        <div className="flex gap-3 text-xs font-medium">
           <span className="text-green-600">✅ {counts.guardar}</span>
           <span className="text-red-600">❌ {counts.desechar}</span>
           <span className="text-slate-500">➖ {counts.no_tiene}</span>
           {counts.pending > 0 && (
-            <span className="text-yellow-600">⏳ {counts.pending} pendientes</span>
+            <span className="text-yellow-600">⏳ {counts.pending}</span>
           )}
         </div>
       </div>
